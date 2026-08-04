@@ -232,6 +232,7 @@ function renderBills(bills) {
       </div>
       <div style="display:flex; gap:6px;">
         ${b.pay_url ? `<button onclick="window.open('${b.pay_url}','_blank')">Pay</button>` : ''}
+        <button class="secondary" onclick="editBillUrl('${b.id}','${(b.pay_url || '').replace(/'/g, "\\'")}')">Edit</button>
         <button class="secondary" onclick="deleteBill('${b.id}')">✕</button>
       </div>
     </div>`;
@@ -261,6 +262,13 @@ async function addBill() {
 
 async function deleteBill(id) {
   await apiCall('bills', { method: 'DELETE', body: JSON.stringify({ id }) });
+  loadDashboard();
+}
+
+async function editBillUrl(id, currentUrl) {
+  const newUrl = prompt('Pay URL for this bill (the biller\'s payment page):', currentUrl || '');
+  if (newUrl === null) return; // cancelled
+  await apiCall('bills', { method: 'PUT', body: JSON.stringify({ id, pay_url: newUrl }) });
   loadDashboard();
 }
 </script>
