@@ -21,6 +21,7 @@
   .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
   .row:last-child { border-bottom: none; }
   button { background: var(--accent); color: white; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+  button:disabled { opacity: 0.6; cursor: default; }
   button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
   button.danger { background: var(--danger); }
   .bill-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
@@ -51,8 +52,8 @@
   <div id="connectionStatus" class="sub" style="margin-bottom:16px;"></div>
 
   <div class="top-actions">
-    <button onclick="startPlaidLink()">+ Connect Account</button>
-    <button class="secondary" onclick="syncData()">Refresh Data</button>
+    <button id="connectBtn" onclick="startPlaidLink()">+ Connect Account</button>
+    <button id="refreshBtn" class="secondary" onclick="syncData()">Refresh Data</button>
   </div>
 
   <div class="grid">
@@ -105,13 +106,13 @@ function unlockApp() {
   localStorage.setItem('finance_access_key', val);
   document.getElementById('gate').style.display = 'none';
   document.getElementById('app').style.display = 'block';
-  loadDashboard();
+  syncData();
 }
 
 if (ACCESS_KEY) {
   document.getElementById('gate').style.display = 'none';
   document.getElementById('app').style.display = 'block';
-  window.addEventListener('DOMContentLoaded', loadDashboard);
+  window.addEventListener('DOMContentLoaded', syncData);
 }
 
 async function apiCall(path, opts = {}) {
@@ -127,7 +128,13 @@ async function apiCall(path, opts = {}) {
 }
 
 async function startPlaidLink() {
+  const btn = document.getElementById('connectBtn');
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Loading...';
   const { link_token } = await apiCall('plaid-create-link-token');
+  btn.disabled = false;
+  btn.textContent = original;
   if (!link_token) { alert('Could not start Plaid Link. Check your Plaid API keys in Netlify env vars.'); return; }
   plaidHandler = Plaid.create({
     token: link_token,
@@ -143,8 +150,17 @@ async function startPlaidLink() {
 }
 
 async function syncData() {
-  await apiCall('sync-data');
-  await loadDashboard();
+  const btn = document.getElementById('refreshBtn');
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Syncing...';
+  try {
+    await apiCall('sync-data');
+    await loadDashboard();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
 }
 
 async function loadDashboard() {
