@@ -9,7 +9,13 @@ exports.handler = async (event) => {
   try {
     const client = getPlaidClient();
     const response = await client.linkTokenCreate({
-      user: { client_user_id: 'frank' },
+      user: {
+        client_user_id: 'frank',
+        // Marking the phone as already verified skips Plaid Link's SMS
+        // verification screen, which was blocking sandbox testing.
+        phone_number: process.env.OWNER_PHONE_NUMBER || undefined,
+        phone_number_verified_time: process.env.OWNER_PHONE_NUMBER ? new Date().toISOString() : undefined,
+      },
       client_name: 'Personal Finance Dashboard',
       products: ['transactions', 'investments'],
       country_codes: ['US'],
