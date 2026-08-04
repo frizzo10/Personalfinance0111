@@ -152,14 +152,40 @@ async function loadDashboard() {
 function renderAccounts(accounts) {
   let cash = 0, invest = 0;
   const list = document.getElementById('accountsList');
-  list.innerHTML = accounts.map(a => {
-    const bal = a.current_balance || 0;
-    if (a.type === 'investment') invest += bal; else if (a.type === 'depository') cash += bal;
-    return `<div class="row"><span>${a.name} ${a.mask ? '••' + a.mask : ''}</span><span>$${bal.toLocaleString()}</span></div>`;
+
+  // Group by institution so duplicate sandbox test accounts are distinguishable
+  const byInstitution = {};
+  accounts.forEach(a => {
+    const key = a.institution_name || 'Unknown institution';
+    if (!byInstitution[key]) byInstitution[key] = [];
+    byInstitution[key].push(a);
+  });
+
+  list.innerHTML = Object.entries(byInstitution).map(([institution, accts]) => {
+    const itemId = accts[0].item_id;
+    const rows = accts.map(a => {
+      const bal = a.current_balance || 0;
+      if (a.type === 'investment') invest += bal; else if (a.type === 'depository') cash += bal;
+      return `<div class="row"><span>${a.name} ${a.mask ? '••' + a.mask : ''}</span><span>$${bal.toLocaleString()}</span></div>`;
+    }).join('');
+    return `<div style="margin-bottom:14px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+        <div style="font-weight:600; color:var(--accent); font-size:13px; text-transform:uppercase; letter-spacing:0.03em;">${institution}</div>
+        <button class="secondary" style="padding:2px 8px; font-size:11px;" onclick="disconnectInstitution('${itemId}','${institution.replace(/'/g, "\\'")}')">Disconnect</button>
+      </div>
+      ${rows}
+    </div>`;
   }).join('') || '<div class="sub">No accounts connected yet.</div>';
+
   document.getElementById('cashTotal').textContent = '$' + cash.toLocaleString();
   document.getElementById('investTotal').textContent = '$' + invest.toLocaleString();
   document.getElementById('netWorth').textContent = '$' + (cash + invest).toLocaleString();
+}
+
+async function disconnectInstitution(itemId, institutionName) {
+  if (!confirm(`Disconnect "${institutionName}"? This removes its accounts, transactions, and holdings from your dashboard.`)) return;
+  await apiCall('plaid-remove-item', { method: 'POST', body: JSON.stringify({ item_id: itemId }) });
+  loadDashboard();
 }
 
 function renderBills(bills) {

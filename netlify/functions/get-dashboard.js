@@ -8,20 +8,32 @@ exports.handler = async (event) => {
   const supabase = getSupabaseClient();
 
   try {
-    const [accounts, transactions, holdings, bills] = await Promise.all([
+    const [accounts, transactions, holdings, bills, items] = await Promise.all([
       supabase.from('accounts').select('*').order('type'),
       supabase.from('transactions').select('*').order('date', { ascending: false }).limit(100),
       supabase.from('investment_holdings').select('*'),
       supabase.from('bills').select('*').order('next_due_date', { ascending: true }),
+      supabase.from('plaid_items').select('item_id, institution_name, created_at'),
     ]);
+
+    // Attach institution name to each account so duplicate sandbox test
+    // accounts (same fake names across different connected "banks") are
+    // still distinguishable in the UI.
+    const itemMap = {};
+    (items.data || []).forEach(i => { itemMap[i.item_id] = i.institution_name; });
+    const accountsWithInstitution = (accounts.data || []).map(a => ({
+      ...a,
+      institution_name: itemMap[a.item_id] || 'Unknown institution',
+    }));
 
     return {
       statusCode: 200,
       body: JSON.stringify({
-        accounts: accounts.data || [],
+        accounts: accountsWithInstitution,
         transactions: transactions.data || [],
         holdings: holdings.data || [],
         bills: bills.data || [],
+        items: items.data || [],
       }),
     };
   } catch (err) {
