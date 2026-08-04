@@ -231,7 +231,7 @@ function renderBills(bills) {
         <div class="sub" style="margin:0;">Due ${b.next_due_date || 'n/a'}</div>
       </div>
       <div style="display:flex; gap:6px;">
-        ${b.pay_url ? `<button onclick="window.open('${b.pay_url}','_blank')">Pay</button>` : ''}
+        ${b.pay_url ? `<button onclick="openPayUrl('${b.pay_url.replace(/'/g, "\\'")}')">Pay</button>` : ''}
         <button class="secondary" onclick="editBillUrl('${b.id}','${(b.pay_url || '').replace(/'/g, "\\'")}')">Edit</button>
         <button class="secondary" onclick="deleteBill('${b.id}')">✕</button>
       </div>
@@ -270,6 +270,13 @@ async function editBillUrl(id, currentUrl) {
   if (newUrl === null) return; // cancelled
   await apiCall('bills', { method: 'PUT', body: JSON.stringify({ id, pay_url: newUrl }) });
   loadDashboard();
+}
+
+function openPayUrl(url) {
+  // If someone typed "www.example.com" without a protocol, the browser
+  // treats it as a path on OUR site instead of an external link. Fix that here.
+  const normalized = /^https?:\/\//i.test(url) ? url : 'https://' + url;
+  window.open(normalized, '_blank');
 }
 </script>
 </body>
