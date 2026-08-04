@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Personal Finance Dashboard</title>
+<script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+<style>
+  :root {
+    --bg: #0F1115; --card: #1A1D24; --accent: #3E8E7E; --text: #E8E8E8;
+    --muted: #8A8F98; --danger: #E85D5D; --border: #2A2D35;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 24px; }
+  h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+  .card h2 { font-size: 14px; color: var(--muted); font-weight: 500; margin: 0 0 10px; text-transform: uppercase; letter-spacing: 0.03em; }
+  .balance { font-size: 26px; font-weight: 600; }
+  .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+  .row:last-child { border-bottom: none; }
+  button { background: var(--accent); color: white; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+  button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  button.danger { background: var(--danger); }
+  .bill-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .overdue { color: var(--danger); }
+  .top-actions { display: flex; gap: 10px; margin-bottom: 20px; }
+  #gate { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; }
+  #gate input { padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text); }
+  .add-bill-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+  .add-bill-form input { padding: 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); grid-column: span 1; }
+  .add-bill-form input.full { grid-column: span 2; }
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <h1>Personal Finance Dashboard</h1>
+  <input id="accessKeyInput" type="password" placeholder="Access key">
+  <button onclick="unlockApp()">Enter</button>
+</div>
+
+<div id="app" style="display:none;">
+  <h1>Personal Finance Dashboard</h1>
+  <div class="sub">Watching your accounts. Nothing pays itself — you click "Pay" when you're ready.</div>
+
+  <div class="top-actions">
+    <button onclick="startPlaidLink()">+ Connect Account</button>
+    <button class="secondary" onclick="syncData()">Refresh Data</button>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Net Worth</h2>
+      <div class="balance" id="netWorth">$0.00</div>
+    </div>
+    <div class="card">
+      <h2>Cash (Banking)</h2>
+      <div class="balance" id="cashTotal">$0.00</div>
+    </div>
+    <div class="card">
+      <h2>Investments</h2>
+      <div class="balance" id="investTotal">$0.00</div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Accounts</h2>
+      <div id="accountsList">Loading...</div>
+    </div>
+    <div class="card">
+      <h2>Upcoming Bills</h2>
+      <div id="billsList">Loading...</div>
+      <div class="add-bill-form">
+        <input id="billPayee" placeholder="Payee" class="full">
+        <input id="billAmount" placeholder="Amount" type="number">
+        <input id="billDueDate" placeholder="Due date" type="date">
+        <input id="billUrl" placeholder="Pay URL (biller's site)" class="full">
+        <button class="full" style="grid-column: span 2;" onclick="addBill()">+ Add Bill</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Recent Transactions</h2>
+    <div id="txList">Loading...</div>
+  </div>
+</div>
+
+<script>
+let ACCESS_KEY = localStorage.getItem('finance_access_key') || '';
+let plaidHandler = null;
+
+function unlockApp() {
+  const val = document.getElementById('accessKeyInput').value;
+  if (!val) return;
+  ACCESS_KEY = val;
+  localStorage.setItem('finance_access_key', val);
+  document.getElementById('gate').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  loadDashboard();
+}
+
+if (ACCESS_KEY) {
+  document.getElementById('gate').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  window.addEventListener('DOMContentLoaded', loadDashboard);
+}
+
+async function apiCall(path, opts = {}) {
+  const res = await fetch('/.netlify/functions/' + path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', 'x-app-key': ACCESS_KEY, ...(opts.headers || {}) },
+  });
+  if (res.status === 401) {
+    localStorage.removeItem('finance_access_key');
+    location.reload();
+  }
+  return res.json();
+}
+
+async function startPlaidLink() {
+  const { link_token } = await apiCall('plaid-create-link-token');
+  if (!link_token) { alert('Could not start Plaid Link. Check your Plaid API keys in Netlify env vars.'); return; }
+  plaidHandler = Plaid.create({
+    token: link_token,
+    onSuccess: async (public_token, metadata) => {
+      await apiCall('plaid-exchange-token', {
+        method: 'POST',
+        body: JSON.stringify({ public_token, institution_name: metadata.institution?.name }),
+      });
+      await syncData();
+    },
+  });
+  plaidHandler.open();
+}
+
+async function syncData() {
+  await apiCall('sync-data');
+  await loadDashboard();
+}
+
+async function loadDashboard() {
+  const data = await apiCall('get-dashboard');
+  renderAccounts(data.accounts || []);
+  renderBills(data.bills || []);
+  renderTransactions(data.transactions || []);
+}
+
+function renderAccounts(accounts) {
+  let cash = 0, invest = 0;
+  const list = document.getElementById('accountsList');
+  list.innerHTML = accounts.map(a => {
+    const bal = a.current_balance || 0;
+    if (a.type === 'investment') invest += bal; else if (a.type === 'depository') cash += bal;
+    return `<div class="row"><span>${a.name} ${a.mask ? '••' + a.mask : ''}</span><span>$${bal.toLocaleString()}</span></div>`;
+  }).join('') || '<div class="sub">No accounts connected yet.</div>';
+  document.getElementById('cashTotal').textContent = '$' + cash.toLocaleString();
+  document.getElementById('investTotal').textContent = '$' + invest.toLocaleString();
+  document.getElementById('netWorth').textContent = '$' + (cash + invest).toLocaleString();
+}
+
+function renderBills(bills) {
+  const list = document.getElementById('billsList');
+  const today = new Date().toISOString().slice(0, 10);
+  list.innerHTML = bills.map(b => {
+    const overdue = b.next_due_date && b.next_due_date < today && !b.is_paid_this_cycle;
+    return `<div class="bill-row">
+      <div>
+        <div class="${overdue ? 'overdue' : ''}">${b.payee} — $${b.amount || 0}</div>
+        <div class="sub" style="margin:0;">Due ${b.next_due_date || 'n/a'}</div>
+      </div>
+      <div style="display:flex; gap:6px;">
+        ${b.pay_url ? `<button onclick="window.open('${b.pay_url}','_blank')">Pay</button>` : ''}
+        <button class="secondary" onclick="deleteBill('${b.id}')">✕</button>
+      </div>
+    </div>`;
+  }).join('') || '<div class="sub">No bills tracked yet.</div>';
+}
+
+function renderTransactions(txs) {
+  const list = document.getElementById('txList');
+  list.innerHTML = txs.slice(0, 20).map(t => `
+    <div class="row"><span>${t.date} — ${t.merchant_name || t.name}</span><span>$${t.amount}</span></div>
+  `).join('') || '<div class="sub">No transactions yet.</div>';
+}
+
+async function addBill() {
+  const payee = document.getElementById('billPayee').value;
+  const amount = document.getElementById('billAmount').value;
+  const next_due_date = document.getElementById('billDueDate').value;
+  const pay_url = document.getElementById('billUrl').value;
+  if (!payee) return alert('Enter a payee name');
+  await apiCall('bills', { method: 'POST', body: JSON.stringify({ payee, amount, next_due_date, pay_url }) });
+  document.getElementById('billPayee').value = '';
+  document.getElementById('billAmount').value = '';
+  document.getElementById('billDueDate').value = '';
+  document.getElementById('billUrl').value = '';
+  loadDashboard();
+}
+
+async function deleteBill(id) {
+  await apiCall('bills', { method: 'DELETE', body: JSON.stringify({ id }) });
+  loadDashboard();
+}
+</script>
+</body>
+</html>

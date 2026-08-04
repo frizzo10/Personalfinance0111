@@ -1,0 +1,9 @@
+{
+  "name": "personalfinance0111",
+  "version": "1.0.0",
+  "description": "Personal finance dashboard - account aggregation and bill tracking via Plaid",
+  "dependencies": {
+    "plaid": "^29.0.0",
+    "@supabase/supabase-js": "^2.45.0"
+  }
+}
