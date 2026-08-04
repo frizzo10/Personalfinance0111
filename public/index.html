@@ -31,6 +31,10 @@
   .add-bill-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
   .add-bill-form input { padding: 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); grid-column: span 1; }
   .add-bill-form input.full { grid-column: span 2; }
+  .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; }
+  .status-connected { background: rgba(62,142,126,0.15); color: var(--accent); }
+  .status-disconnected { background: rgba(232,93,93,0.12); color: var(--danger); }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 </style>
 </head>
 <body>
@@ -44,6 +48,7 @@
 <div id="app" style="display:none;">
   <h1>Personal Finance Dashboard</h1>
   <div class="sub">Watching your accounts. Nothing pays itself — you click "Pay" when you're ready.</div>
+  <div id="connectionStatus" class="sub" style="margin-bottom:16px;"></div>
 
   <div class="top-actions">
     <button onclick="startPlaidLink()">+ Connect Account</button>
@@ -144,9 +149,20 @@ async function syncData() {
 
 async function loadDashboard() {
   const data = await apiCall('get-dashboard');
+  renderConnectionStatus(data.items || []);
   renderAccounts(data.accounts || []);
   renderBills(data.bills || []);
   renderTransactions(data.transactions || []);
+}
+
+function renderConnectionStatus(items) {
+  const el = document.getElementById('connectionStatus');
+  if (!items.length) {
+    el.innerHTML = `<span class="status-badge status-disconnected"><span class="status-dot"></span>Not connected — click "Connect Account" to link a bank</span>`;
+    return;
+  }
+  const names = items.map(i => i.institution_name).join(', ');
+  el.innerHTML = `<span class="status-badge status-connected"><span class="status-dot"></span>Connected to ${items.length} institution${items.length > 1 ? 's' : ''}: ${names}</span>`;
 }
 
 function renderAccounts(accounts) {
